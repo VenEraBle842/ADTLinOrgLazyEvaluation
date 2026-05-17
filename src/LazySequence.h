@@ -9,7 +9,6 @@
 // Неизменяема (immutable): мутации возвращают новые LazySequence.
 template <class T>
 class LazySequence : public Sequence<T> {
-private:
     mutable Generator<T>* generator;
     mutable T* memoized; // Внутренний массив для максимальной скорости мемоизации
     mutable size_t count;
@@ -18,7 +17,7 @@ private:
 
     // Закрытый конструктор для внутренних операций клонирования
     LazySequence(Generator<T>* gen, T* mem, size_t c, size_t cap, Cardinal card) {
-        generator = gen->Clone();
+        generator = gen;
         capacity = cap;
         count = c;
         memoized = new T[capacity];
@@ -43,7 +42,8 @@ private:
     }
 
 public:
-    // Конструктор из правила и начального окна
+    // Конструктор...
+    // ... из правила и начального окна
     LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity()) {
         generator = new RuleGenerator<T>(rule, initialWindow, card.isInfinite, card.value);
         capacity = 10;
@@ -52,8 +52,25 @@ public:
         cardinality = card;
     }
 
-    LazySequence() : generator(nullptr), capacity(10), count(0), cardinality(0) {
+    // ... пустой
+    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 10, Cardinal(0)) {}
+
+    // ... копирования
+    LazySequence(const LazySequence<T>& other)
+        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.cardinality) {}
+
+    // ... из обычного массива
+    LazySequence(const T* items, size_t size)
+        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 10 : size, Cardinal(size)) {}
+
+    // ... из любой последовательности
+    explicit LazySequence(const Sequence<T>* seq) {
+        generator = new EmptyGenerator<T>();
+        count = seq->GetLength();
+        capacity = count == 0 ? 10 : count;
         memoized = new T[capacity];
+        for (size_t i = 0; i < count; ++i) memoized[i] = seq->Get(i);
+        cardinality = Cardinal(count);
     }
 
     ~LazySequence() override {

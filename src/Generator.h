@@ -20,6 +20,15 @@ public:
     }
 };
 
+// Генератор для конечных последовательностей, заданных статически
+template <class T>
+class EmptyGenerator : public Generator<T> {
+public:
+    bool HasNext() const override { return false; }
+    T GetNext() override { throw IndexOutOfRange("No elements to generate"); }
+    Generator<T>* Clone() const override { return new EmptyGenerator<T>(); }
+};
+
 // Генератор, работающий по рекуррентному правилу со "скользящим окном"
 template <class T>
 class RuleGenerator : public Generator<T> {
