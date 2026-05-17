@@ -42,8 +42,7 @@ class SequenceStream : public ReadOnlyStream<T> {
 
 public:
     explicit SequenceStream(const Sequence<T>* sequence) : seq(sequence), position(0) {
-        auto* lazy = dynamic_cast<const LazySequence<T>*>(seq);
-        if (lazy) {
+        if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
             isLazy = true;
             length = lazy->GetCardinality();
         } else {

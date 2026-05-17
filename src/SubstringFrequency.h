@@ -50,6 +50,9 @@ class AhoCorasick {
     public:
         explicit NodeQueue(int capacity) { data = new Node*[capacity]; }
         ~NodeQueue() { delete[] data; }
+        NodeQueue(const NodeQueue&) = delete;
+        NodeQueue& operator=(const NodeQueue&) = delete;
+
         void Push(Node* n) { data[tail++] = n; }
         Node* Pop() { return data[head++]; }
         bool IsEmpty() const { return head == tail; }
@@ -76,7 +79,7 @@ public:
         }
 
         // Построение суффиксных ссылок (fail) через BFS
-        NodeQueue queue(10000);
+        NodeQueue queue(tracker.count);
         root->fail = root;
 
         for (auto & i : root->children) {

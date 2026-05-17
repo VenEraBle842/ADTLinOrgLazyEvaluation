@@ -90,7 +90,7 @@ public:
 };
 
 // Генератор-модификатор (декоратор), позволяющий внедрять отложенные изменения
-// (Добавления, вставки, удаления) до их материализации.
+// (добавления, вставки, удаления) до их материализации.
 template <class T>
 class ModifiedGenerator : public Generator<T> {
     Generator<T>* baseGen;
@@ -111,7 +111,7 @@ class ModifiedGenerator : public Generator<T> {
         if (opsCount == opsCapacity) {
             opsCapacity = opsCapacity == 0 ? 4 : opsCapacity * 2;
             auto* newOps = new Operation[opsCapacity];
-            for(size_t i=0; i<opsCount; ++i) newOps[i] = ops[i];
+            for (size_t i = 0; i < opsCount; ++i) newOps[i] = ops[i];
             delete[] ops;
             ops = newOps;
         }
@@ -128,7 +128,7 @@ public:
         opsCount = eCount;
         opsCapacity = eCap;
         ops = new Operation[opsCapacity];
-        for(size_t i=0; i<opsCount; ++i) ops[i] = existingOps[i];
+        for (size_t i = 0; i < opsCount; ++i) ops[i] = existingOps[i];
     }
 
     ~ModifiedGenerator() override {
@@ -160,7 +160,7 @@ public:
         // запланирован INSERT, возвращаем его. Если REMOVE - пропускаем элемент базы.
         for (size_t i = 0; i < opsCount; ++i) {
             if (ops[i].type == Operation::INSERT && ops[i].index == currentIndex) {
-                // Чтобы не зацикливаться, нужно хитро менять индекс или помечать операцию выполненной.
+                // Чтобы не зацикливаться, нужно менять индекс или помечать операцию выполненной.
                 currentIndex++;
                 return ops[i].item;
             }
