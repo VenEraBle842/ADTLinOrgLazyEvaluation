@@ -16,7 +16,7 @@ class LazySequence : public Sequence<T> {
     Cardinal cardinality;
 
     // Закрытый конструктор для внутренних операций клонирования
-    LazySequence(Generator<T>* gen, T* mem, size_t c, size_t cap, Cardinal card) {
+    LazySequence(Generator<T>* gen, const T* mem, size_t c, size_t cap, Cardinal card) {
         generator = gen;
         capacity = cap;
         count = c;
@@ -94,7 +94,9 @@ public:
 
     int GetLength() const override {
         if (cardinality.isInfinite) throw std::logic_error("Cannot get length of infinite sequence");
-        EnsureMaterialized(cardinality.value - 1);
+        if (cardinality.value > 0) {
+            EnsureMaterialized(cardinality.value - 1);
+        }
         return static_cast<int>(count);
     }
 
