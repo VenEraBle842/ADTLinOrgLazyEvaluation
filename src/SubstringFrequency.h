@@ -75,7 +75,7 @@ public:
                 }
                 current = current->children[uc];
             }
-            current->matchIndices.Add(i); // Обновлено
+            current->matchIndices.Add(i);
         }
 
         // Построение суффиксных ссылок (fail) через BFS
@@ -101,7 +101,7 @@ public:
 
                     // Слияние совпадений из узла ошибки
                     for(int m = 0; m < child->fail->matchIndices.count; ++m) {
-                        child->matchIndices.Add(child->fail->matchIndices.data[m]); // Обновлено
+                        child->matchIndices.Add(child->fail->matchIndices.data[m]);
                     }
                     queue.Push(child);
                 } else if (!current->children[i]) {
@@ -131,7 +131,7 @@ public:
             auto uc = static_cast<unsigned char>(c);
             current = current->children[uc];
             for (int i = 0; i < current->matchIndices.count; ++i) {
-                frequencies[current->matchIndices.data[i]]++; // Обновлено
+                frequencies[current->matchIndices.data[i]]++;
             }
         }
         return frequencies;
