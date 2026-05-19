@@ -36,12 +36,13 @@ public:
 template <class T>
 class SequenceStream : public ReadOnlyStream<T> {
     const Sequence<T>* seq;
+    IEnumerator<T>* enumerator; // Итератор для O(1) последовательного чтения
     size_t position;
     bool isLazy;
     Cardinal length;
 
 public:
-    explicit SequenceStream(const Sequence<T>* sequence) : seq(sequence), position(0) {
+    explicit SequenceStream(const Sequence<T>* sequence) : seq(sequence), enumerator(nullptr), position(0) {
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
             isLazy = true;
             length = lazy->GetCardinality();
@@ -49,6 +50,16 @@ public:
             isLazy = false;
             length = Cardinal(seq->GetLength());
         }
+
+        try {
+            enumerator = seq->GetEnumerator();
+        } catch (...) {
+            enumerator = nullptr;
+        }
+    }
+
+    ~SequenceStream() override {
+        delete enumerator;
     }
 
     bool IsEndOfStream() const override {
@@ -58,15 +69,56 @@ public:
 
     T Read() override {
         if (IsEndOfStream()) throw IndexOutOfRange("End of stream");
-        return seq->Get(position++);
+
+        T val;
+        if (enumerator) {
+            if (enumerator->MoveNext()) {
+                val = enumerator->Current();
+            } else {
+                throw IndexOutOfRange("End of stream");
+            }
+        } else {
+            val = seq->Get(position); // Fallback
+        }
+
+        position++;
+        return val;
     }
 
     size_t GetPosition() const override { return position; }
     bool IsCanSeek() const override { return true; }
-    size_t Seek(size_t index) override { return position = index; }
+
+    size_t Seek(size_t index) override {
+        if (index == position) return position;
+
+        if (enumerator) {
+            // Если нужно отмотать назад, сбрасываем итератор в начало
+            if (index < position) {
+                enumerator->Reset();
+                position = 0;
+            }
+            // Прокручиваем итератор до нужной позиции
+            while (position < index) {
+                enumerator->MoveNext();
+                position++;
+            }
+        } else {
+            position = index;
+        }
+        return position;
+    }
+
     bool IsCanGoBack() const override { return true; }
-    void Open() override { position = 0; }
-    void Close() override { position = 0; }
+
+    void Open() override {
+        if (enumerator) enumerator->Reset();
+        position = 0;
+    }
+
+    void Close() override {
+        if (enumerator) enumerator->Reset();
+        position = 0;
+    }
 };
 
 // Физический файловый поток специально для посимвольного чтения.

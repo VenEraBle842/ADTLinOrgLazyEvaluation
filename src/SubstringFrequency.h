@@ -7,10 +7,10 @@ class AhoCorasick {
     template <class T>
     struct ArrayList {
         T* data;
-        int count = 0;
+        int count;
         int capacity;
 
-        explicit ArrayList(int initCapacity = 2) : capacity(initCapacity) {
+        explicit ArrayList(int initCapacity = 2) : count(0), capacity(initCapacity) {
             data = new T[capacity];
         }
 
@@ -35,9 +35,9 @@ class AhoCorasick {
     struct Node {
         Node* children[256] = {nullptr};
         Node* fail = nullptr;
-        ArrayList<size_t>* matchIndices;
-        Node() : matchIndices(new ArrayList<size_t>) {}
-        ~Node() { delete matchIndices; }
+        ArrayList<size_t> matchIndices;
+
+        Node() = default;
     };
 
     ArrayList<Node*> tracker; // Отслеживает все вызовы new Node()
@@ -75,7 +75,7 @@ public:
                 }
                 current = current->children[uc];
             }
-            current->matchIndices->Add(i);
+            current->matchIndices.Add(i); // Обновлено
         }
 
         // Построение суффиксных ссылок (fail) через BFS
@@ -100,8 +100,8 @@ public:
                     child->fail = failNode->children[i];
 
                     // Слияние совпадений из узла ошибки
-                    for(int m = 0; m < child->fail->matchIndices->count; ++m) {
-                        child->matchIndices->Add(child->fail->matchIndices->data[m]);
+                    for(int m = 0; m < child->fail->matchIndices.count; ++m) {
+                        child->matchIndices.Add(child->fail->matchIndices.data[m]); // Обновлено
                     }
                     queue.Push(child);
                 } else if (!current->children[i]) {
@@ -130,8 +130,8 @@ public:
 
             auto uc = static_cast<unsigned char>(c);
             current = current->children[uc];
-            for (int i = 0; i < current->matchIndices->count; ++i) {
-                frequencies[current->matchIndices->data[i]]++;
+            for (int i = 0; i < current->matchIndices.count; ++i) {
+                frequencies[current->matchIndices.data[i]]++; // Обновлено
             }
         }
         return frequencies;

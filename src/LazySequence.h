@@ -20,8 +20,12 @@ class LazySequence : public Sequence<T> {
         generator = gen;
         capacity = cap;
         count = c;
-        memoized = new T[capacity];
-        for (size_t i = 0; i < count; ++i) memoized[i] = mem[i];
+        if (capacity > 0) {
+            memoized = new T[capacity];
+            for (size_t i = 0; i < count; ++i) memoized[i] = mem[i];
+        } else {
+            memoized = nullptr;
+        }
         cardinality = card;
     }
 
@@ -29,7 +33,7 @@ class LazySequence : public Sequence<T> {
     void EnsureMaterialized(size_t index) const {
         while (count <= index && generator->HasNext()) {
             if (count == capacity) {
-                size_t newCap = capacity == 0 ? 10 : capacity * 2;
+                size_t newCap = capacity == 0 ? 8 : capacity * 2;
                 T* newMem = new T[newCap];
                 for (size_t i = 0; i < count; ++i) newMem[i] = memoized[i];
                 delete[] memoized;
@@ -41,19 +45,53 @@ class LazySequence : public Sequence<T> {
         if (count <= index) throw IndexOutOfRange("Index out of bounds");
     }
 
+    // Класс итератора специально для ленивой коллекции
+    class LazyEnumerator : public IEnumerator<T> {
+        const LazySequence<T>* seq;
+        size_t currentIndex;
+        bool hasCurrent;
+        T currentItem;
+
+    public:
+        explicit LazyEnumerator(const LazySequence<T>* sequence)
+            : seq(sequence), currentIndex(0), hasCurrent(false) {}
+
+        bool MoveNext() override {
+            Cardinal card = seq->GetCardinality();
+            // Проверяем, не вышли ли мы за пределы (для бесконечных всегда true)
+            if (card.isInfinite || currentIndex < card.value) {
+                currentItem = seq->Get(currentIndex++);
+                hasCurrent = true;
+                return true;
+            }
+            hasCurrent = false;
+            return false;
+        }
+
+        T Current() const override {
+            if (!hasCurrent) throw IndexOutOfRange("Enumerator is out of bounds or not started");
+            return currentItem;
+        }
+
+        void Reset() override {
+            currentIndex = 0;
+            hasCurrent = false;
+        }
+    };
+
 public:
     // Конструктор...
     // ... из правила и начального окна
     LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity()) {
         generator = new RuleGenerator<T>(rule, initialWindow, card.isInfinite, card.value);
-        capacity = 10;
+        capacity = 8;
         count = 0;
         memoized = new T[capacity];
         cardinality = card;
     }
 
     // ... пустой
-    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 10, Cardinal(0)) {}
+    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 8, Cardinal(0)) {}
 
     // ... копирования
     LazySequence(const LazySequence<T>& other)
@@ -61,16 +99,22 @@ public:
 
     // ... из обычного массива
     LazySequence(const T* items, size_t size)
-        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 10 : size, Cardinal(size)) {}
+        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 8 : size, Cardinal(size)) {}
 
-    // ... из любой последовательности
+    // ... обертки
     explicit LazySequence(const Sequence<T>* seq) {
-        generator = new EmptyGenerator<T>();
-        count = seq->GetLength();
-        capacity = count == 0 ? 10 : count;
+        count = 0;
+        capacity = 8;
         memoized = new T[capacity];
-        for (size_t i = 0; i < count; ++i) memoized[i] = seq->Get(i);
-        cardinality = Cardinal(count);
+
+        // Безопасное определение мощности без полного вычисления:
+        if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
+            cardinality = lazy->GetCardinality();
+        } else {
+            cardinality = Cardinal(seq->GetLength());
+        }
+
+        generator = new SequenceGenerator<T>(seq, cardinality.isInfinite, cardinality.value, 0);
     }
 
     ~LazySequence() override {
@@ -84,7 +128,11 @@ public:
     // --- Строгая реализация чисто виртуальных методов интерфейса Sequence<T> ---
 
     const T& GetFirst() const override { return Get(0); }
-    const T& GetLast() const override { return Get(GetLength() - 1); }
+    const T& GetLast() const override {
+        if (cardinality.isInfinite) throw std::logic_error("Cannot get last element of infinite sequence");
+        if (cardinality.value == 0) throw IndexOutOfRange("Sequence is empty");
+        return Get(static_cast<int>(cardinality.value) - 1);
+    }
 
     const T& Get(int index) const override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
@@ -101,30 +149,96 @@ public:
     }
 
     // Операции мутации возвращают новую последовательность (Immutable)
+
     Sequence<T>* Append(const T& item) override {
-        auto* modGen = new ModifiedGenerator<T>(generator);
-        auto* finalGen = modGen->AppendOp(item);
+        // Создаем генератор на основе независимого снимка
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+
+        auto* modGen = new ModifiedGenerator<T>(baseGen);
+        ModifiedGenerator<T>* finalGen = modGen->AppendOp(item);
+
         delete modGen;
-        return new LazySequence<T>(finalGen, memoized, count, capacity, cardinality + Cardinal(1));
+        delete baseGen;
+
+        Cardinal newCard = cardinality + Cardinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
     }
 
-    Sequence<T>* Prepend(const T& item) override { return InsertAt(item, 0); }
+    Sequence<T>* Prepend(const T& item) override {
+        return InsertAt(item, 0);
+    }
 
     Sequence<T>* InsertAt(const T& item, int index) override {
-        auto* modGen = new ModifiedGenerator<T>(generator);
-        auto* finalGen = modGen->InsertOp(item, index);
+        if (index < 0) throw IndexOutOfRange("Index out of bounds");
+        if (!cardinality.isInfinite && static_cast<size_t>(index) > cardinality.value) {
+            throw IndexOutOfRange("Index out of bounds");
+        }
+
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+
+        auto* modGen = new ModifiedGenerator<T>(baseGen);
+        ModifiedGenerator<T>* finalGen = modGen->InsertOp(item, static_cast<size_t>(index));
+
         delete modGen;
-        return new LazySequence<T>(finalGen, memoized, count, capacity, cardinality + Cardinal(1));
+        delete baseGen;
+
+        Cardinal newCard = cardinality + Cardinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
     }
 
-    // Эти методы объявлены в Sequence.h, поэтому мы обязаны их переопределить.
-    Sequence<T>* RemoveFirst() override { throw std::logic_error("Not implemented natively"); }
-    Sequence<T>* RemoveLast() override { throw std::logic_error("Not implemented natively"); }
-    Sequence<T>* RemoveAt(int index) override { throw std::logic_error("Not implemented natively"); }
-    Sequence<T>* GetSubsequence(int startIndex, int endIndex) const override { throw std::logic_error("Not implemented natively"); }
+    Sequence<T>* RemoveFirst() override {
+        return RemoveAt(0);
+    }
 
-    Sequence<T>* Clone() const override { return new LazySequence<T>(generator, memoized, count, capacity, cardinality); }
+    Sequence<T>* RemoveLast() override {
+        if (cardinality.isInfinite) {
+            throw std::logic_error("Cannot remove the last element from an infinite sequence");
+        }
+        if (cardinality.value == 0) {
+            throw IndexOutOfRange("Cannot remove from an empty sequence");
+        }
+        return RemoveAt(static_cast<int>(cardinality.value) - 1);
+    }
+
+    Sequence<T>* RemoveAt(int index) override {
+        if (index < 0) throw IndexOutOfRange("Index out of bounds");
+        if (!cardinality.isInfinite && static_cast<size_t>(index) >= cardinality.value) {
+            throw IndexOutOfRange("Index out of bounds");
+        }
+
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+
+        auto* modGen = new ModifiedGenerator<T>(baseGen);
+        ModifiedGenerator<T>* finalGen = modGen->RemoveOp(static_cast<size_t>(index));
+
+        delete modGen;
+        delete baseGen;
+
+        Cardinal newCard = cardinality - Cardinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
+    }
+
+    Sequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
+        if (startIndex < 0 || endIndex < startIndex) {
+            throw IndexOutOfRange("Invalid indices for subsequence");
+        }
+        if (!cardinality.isInfinite && static_cast<size_t>(endIndex) >= cardinality.value) {
+            throw IndexOutOfRange("End index out of bounds");
+        }
+
+        EnsureMaterialized(endIndex);
+        size_t newSize = endIndex - startIndex + 1;
+        return new LazySequence<T>(memoized + startIndex, newSize);
+    }
+
+    Sequence<T>* Clone() const override {
+        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, cardinality);
+    }
+
     Sequence<T>* Instance() override { return new LazySequence<T>(); }
     Sequence<T>* CreateEmpty() const override { return new LazySequence<T>(); }
-    IEnumerator<T>* GetEnumerator() const override { throw std::logic_error("Not implemented natively"); }
+
+    IEnumerator<T>* GetEnumerator() const override {
+        return new LazyEnumerator(this);
+    }
 };
