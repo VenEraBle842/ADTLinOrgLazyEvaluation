@@ -39,16 +39,16 @@ class SequenceStream : public ReadOnlyStream<T> {
     IEnumerator<T>* enumerator; // Итератор для O(1) последовательного чтения
     size_t position;
     bool isLazy;
-    Cardinal length;
+    Ordinal length;
 
 public:
     explicit SequenceStream(const Sequence<T>* sequence) : seq(sequence), enumerator(nullptr), position(0) {
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
             isLazy = true;
-            length = lazy->GetCardinality();
+            length = lazy->GetOrdinality();
         } else {
             isLazy = false;
-            length = Cardinal(seq->GetLength());
+            length = Ordinal(seq->GetLength());
         }
 
         try {

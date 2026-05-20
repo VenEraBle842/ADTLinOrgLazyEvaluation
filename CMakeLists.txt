@@ -33,7 +33,7 @@ target_include_directories(App PRIVATE
 
 enable_testing()
 add_executable(Tests
-        tests/test_Cardinal.cpp
+        tests/test_Ordinal.cpp
         tests/test_LazySequence.cpp
         tests/test_Stream.cpp
         tests/test_SubstringFrequency.cpp

@@ -1,7 +1,7 @@
 #pragma once
 #include "Sequence.h"
 #include "Generator.h"
-#include "Cardinal.h"
+#include "Ordinal.h"
 #include "Exceptions.h"
 #include <stdexcept>
 
@@ -13,10 +13,10 @@ class LazySequence : public Sequence<T> {
     mutable T* memoized; // Внутренний массив для максимальной скорости мемоизации
     mutable size_t count;
     mutable size_t capacity;
-    Cardinal cardinality;
+    Ordinal Ordinality;
 
     // Закрытый конструктор для внутренних операций клонирования
-    LazySequence(Generator<T>* gen, const T* mem, size_t c, size_t cap, Cardinal card) {
+    LazySequence(Generator<T>* gen, const T* mem, size_t c, size_t cap, Ordinal ord) {
         generator = gen;
         capacity = cap;
         count = c;
@@ -26,7 +26,7 @@ class LazySequence : public Sequence<T> {
         } else {
             memoized = nullptr;
         }
-        cardinality = card;
+        Ordinality = ord;
     }
 
     // Принудительное вычисление до нужного индекса
@@ -57,9 +57,9 @@ class LazySequence : public Sequence<T> {
             : seq(sequence), currentIndex(0), hasCurrent(false) {}
 
         bool MoveNext() override {
-            Cardinal card = seq->GetCardinality();
+            Ordinal ord = seq->GetOrdinality();
             // Проверяем, не вышли ли мы за пределы (для бесконечных всегда true)
-            if (card.isInfinite || currentIndex < card.value) {
+            if (ord.isInfinite || currentIndex < ord.value) {
                 currentItem = seq->Get(currentIndex++);
                 hasCurrent = true;
                 return true;
@@ -82,24 +82,24 @@ class LazySequence : public Sequence<T> {
 public:
     // Конструктор...
     // ... из правила и начального окна
-    LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity()) {
-        generator = new RuleGenerator<T>(rule, initialWindow, card);
+    LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Ordinal ord = Ordinal::Infinity()) {
+        generator = new RuleGenerator<T>(rule, initialWindow, ord);
         capacity = 8;
         count = 0;
         memoized = new T[capacity];
-        cardinality = card;
+        Ordinality = ord;
     }
 
     // ... пустой
-    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 8, Cardinal(0)) {}
+    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 8, Ordinal(0)) {}
 
     // ... копирования
     LazySequence(const LazySequence<T>& other)
-        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.cardinality) {}
+        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.Ordinality) {}
 
     // ... из обычного массива
     LazySequence(const T* items, size_t size)
-        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 8 : size, Cardinal(size)) {}
+        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 8 : size, Ordinal(size)) {}
 
     // ... обертки
     explicit LazySequence(const Sequence<T>* seq) {
@@ -109,12 +109,12 @@ public:
 
         // Безопасное определение мощности без полного вычисления:
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
-            cardinality = lazy->GetCardinality();
+            Ordinality = lazy->GetOrdinality();
         } else {
-            cardinality = Cardinal(seq->GetLength());
+            Ordinality = Ordinal(seq->GetLength());
         }
 
-        generator = new SequenceGenerator<T>(seq, cardinality, 0);
+        generator = new SequenceGenerator<T>(seq, Ordinality, 0);
     }
 
     ~LazySequence() override {
@@ -122,16 +122,16 @@ public:
         delete[] memoized;
     }
 
-    Cardinal GetCardinality() const { return cardinality; }
+    Ordinal GetOrdinality() const { return Ordinality; }
     size_t GetMaterializedCount() const { return count; }
 
     // --- Строгая реализация чисто виртуальных методов интерфейса Sequence<T> ---
 
     const T& GetFirst() const override { return Get(0); }
     const T& GetLast() const override {
-        if (cardinality.isInfinite) throw std::logic_error("Cannot get last element of infinite sequence");
-        if (cardinality.value == 0) throw IndexOutOfRange("Sequence is empty");
-        return Get(static_cast<int>(cardinality.value) - 1);
+        if (Ordinality.isInfinite) throw std::logic_error("Cannot get last element of infinite sequence");
+        if (Ordinality.value == 0) throw IndexOutOfRange("Sequence is empty");
+        return Get(static_cast<int>(Ordinality.value) - 1);
     }
 
     const T& Get(int index) const override {
@@ -141,9 +141,9 @@ public:
     }
 
     int GetLength() const override {
-        if (cardinality.isInfinite) throw std::logic_error("Cannot get length of infinite sequence");
-        if (cardinality.value > 0) {
-            EnsureMaterialized(cardinality.value - 1);
+        if (Ordinality.isInfinite) throw std::logic_error("Cannot get length of infinite sequence");
+        if (Ordinality.value > 0) {
+            EnsureMaterialized(Ordinality.value - 1);
         }
         return static_cast<int>(count);
     }
@@ -151,14 +151,14 @@ public:
     // Операции мутации возвращают новую последовательность (Immutable)
 
     Sequence<T>* Concat(const Sequence<T>* other) override {
-        Cardinal otherCard;
+        Ordinal otherOrd;
         if (auto* lazyOther = dynamic_cast<const LazySequence<T>*>(other)) {
-            otherCard = lazyOther->GetCardinality();
+            otherOrd = lazyOther->GetOrdinality();
         } else {
-            otherCard = Cardinal(other->GetLength());
+            otherOrd = Ordinal(other->GetLength());
         }
 
-        Cardinal newCard = cardinality + otherCard;
+        Ordinal newOrd = Ordinality + otherOrd;
         auto* newGen = new ConcatGenerator<T>();
 
         if (count == 0) {
@@ -169,7 +169,7 @@ public:
             }
         } else {
             // Если элементы уже закешированы, используем SnapshotGenerator, чтобы не терять их
-            newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), cardinality));
+            newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), Ordinality));
         }
 
         if (auto* lazyOther = dynamic_cast<const LazySequence<T>*>(other)) {
@@ -180,17 +180,17 @@ public:
                     newGen->AddGenerator(lazyOther->generator->Clone());
                 }
             } else {
-                newGen->AddGenerator(new SnapshotGenerator<T>(lazyOther->Clone(), otherCard));
+                newGen->AddGenerator(new SnapshotGenerator<T>(lazyOther->Clone(), otherOrd));
             }
         } else {
-            newGen->AddGenerator(new SequenceGenerator<T>(other, otherCard, 0));
+            newGen->AddGenerator(new SequenceGenerator<T>(other, otherOrd, 0));
         }
 
-        return new LazySequence<T>(newGen, nullptr, 0, 8, newCard);
+        return new LazySequence<T>(newGen, nullptr, 0, 8, newOrd);
     }
 
     Sequence<T>* Append(const T& item) override {
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->AppendOp(item);
@@ -198,8 +198,8 @@ public:
         delete modGen;
         delete baseGen;
 
-        Cardinal newCard = cardinality + Cardinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
+        Ordinal newOrd = Ordinality + Ordinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
     Sequence<T>* Prepend(const T& item) override {
@@ -208,11 +208,11 @@ public:
 
     Sequence<T>* InsertAt(const T& item, int index) override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
-        if (!cardinality.isInfinite && static_cast<size_t>(index) > cardinality.value) {
+        if (!Ordinality.isInfinite && static_cast<size_t>(index) > Ordinality.value) {
             throw IndexOutOfRange("Index out of bounds");
         }
 
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->InsertOp(item, static_cast<size_t>(index));
@@ -220,8 +220,8 @@ public:
         delete modGen;
         delete baseGen;
 
-        Cardinal newCard = cardinality + Cardinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
+        Ordinal newOrd = Ordinality + Ordinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
     Sequence<T>* RemoveFirst() override {
@@ -229,22 +229,22 @@ public:
     }
 
     Sequence<T>* RemoveLast() override {
-        if (cardinality.isInfinite) {
+        if (Ordinality.isInfinite) {
             throw std::logic_error("Cannot remove the last element from an infinite sequence");
         }
-        if (cardinality.value == 0) {
+        if (Ordinality.value == 0) {
             throw IndexOutOfRange("Cannot remove from an empty sequence");
         }
-        return RemoveAt(static_cast<int>(cardinality.value) - 1);
+        return RemoveAt(static_cast<int>(Ordinality.value) - 1);
     }
 
     Sequence<T>* RemoveAt(int index) override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
-        if (!cardinality.isInfinite && static_cast<size_t>(index) >= cardinality.value) {
+        if (!Ordinality.isInfinite && static_cast<size_t>(index) >= Ordinality.value) {
             throw IndexOutOfRange("Index out of bounds");
         }
 
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->RemoveOp(static_cast<size_t>(index));
@@ -252,15 +252,15 @@ public:
         delete modGen;
         delete baseGen;
 
-        Cardinal newCard = cardinality - Cardinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newCard);
+        Ordinal newOrd = Ordinality - Ordinal(1);
+        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
     Sequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
         if (startIndex < 0 || endIndex < startIndex) {
             throw IndexOutOfRange("Invalid indices for subsequence");
         }
-        if (!cardinality.isInfinite && static_cast<size_t>(endIndex) >= cardinality.value) {
+        if (!Ordinality.isInfinite && static_cast<size_t>(endIndex) >= Ordinality.value) {
             throw IndexOutOfRange("End index out of bounds");
         }
 
@@ -270,7 +270,7 @@ public:
     }
 
     Sequence<T>* Clone() const override {
-        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, cardinality);
+        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, Ordinality);
     }
 
     Sequence<T>* Instance() override { return new LazySequence<T>(); }

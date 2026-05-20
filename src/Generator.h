@@ -1,6 +1,6 @@
 #pragma once
 #include "Sequence.h"
-#include "Cardinal.h"
+#include "Ordinal.h"
 #include "Option.h"
 #include "Exceptions.h"
 
@@ -36,13 +36,13 @@ class RuleGenerator : public Generator<T> {
     T (*rule)(Sequence<T>*);
     Sequence<T>* window;
     size_t windowSize;
-    Cardinal limitCard;
+    Ordinal limitOrd;
     size_t generated;
     size_t yieldedFromWindow;
 
 public:
-    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity())
-        : rule(r), limitCard(card), generated(0), yieldedFromWindow(0) {
+    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, Ordinal Ord = Ordinal::Infinity())
+        : rule(r), limitOrd(Ord), generated(0), yieldedFromWindow(0) {
         window = new MutableArraySequence<T>();
         windowSize = initialWindow->GetLength();
         for (int i = 0; i < windowSize; ++i) {
@@ -53,8 +53,8 @@ public:
     ~RuleGenerator() override { delete window; }
 
     bool HasNext() const override {
-        if (limitCard.isInfinite) return true;
-        return generated < limitCard.value;
+        if (limitOrd.isInfinite) return true;
+        return generated < limitOrd.value;
     }
 
     T GetNext() override {
@@ -82,7 +82,7 @@ public:
     }
 
     Generator<T>* Clone() const override {
-        auto* clone = new RuleGenerator<T>(rule, window, limitCard);
+        auto* clone = new RuleGenerator<T>(rule, window, limitOrd);
         clone->generated = this->generated;
         clone->yieldedFromWindow = this->yieldedFromWindow;
         return clone;
@@ -96,17 +96,17 @@ template <class T>
 class SequenceGenerator : public Generator<T> {
     const Sequence<T>* seq;
     size_t index;
-    Cardinal lengthCard;
+    Ordinal lengthOrd;
 
 public:
-    SequenceGenerator(const Sequence<T>* s, Cardinal card, size_t start = 0)
-        : seq(s), index(start), lengthCard(card) {}
+    SequenceGenerator(const Sequence<T>* s, Ordinal Ord, size_t start = 0)
+        : seq(s), index(start), lengthOrd(Ord) {}
 
     ~SequenceGenerator() override = default;
 
     bool HasNext() const override {
-        if (lengthCard.isInfinite) return true;
-        return index < lengthCard.value;
+        if (lengthOrd.isInfinite) return true;
+        return index < lengthOrd.value;
     }
 
     T GetNext() override {
@@ -119,7 +119,7 @@ public:
 
     Generator<T>* Clone() const override {
         // При клонировании передаем текущий индекс, чтобы клон продолжил с того же места
-        return new SequenceGenerator<T>(seq, lengthCard, index);
+        return new SequenceGenerator<T>(seq, lengthOrd, index);
     }
 };
 
@@ -130,11 +130,11 @@ template <class T>
 class SnapshotGenerator : public Generator<T> {
     Sequence<T>* snapshot;
     size_t index;
-    Cardinal length;
+    Ordinal length;
 
 public:
-    SnapshotGenerator(Sequence<T>* seqSnapshot, Cardinal card, size_t startIdx = 0)
-        : snapshot(seqSnapshot), index(startIdx), length(card) {}
+    SnapshotGenerator(Sequence<T>* seqSnapshot, Ordinal Ord, size_t startIdx = 0)
+        : snapshot(seqSnapshot), index(startIdx), length(Ord) {}
 
     ~SnapshotGenerator() override {
         delete snapshot; // RAII: удаляем снимок по причине единоличного владения

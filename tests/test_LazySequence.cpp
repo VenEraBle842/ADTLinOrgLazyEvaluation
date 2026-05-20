@@ -12,9 +12,9 @@ TEST(LazySequenceTest, InfiniteGenerationAndMemoization) {
     appendTracked(initial, 0);
     appendTracked(initial, 1);
 
-    LazySequence<int> fib(fibRule, initial, Cardinal::Infinity());
+    LazySequence<int> fib(fibRule, initial, Ordinal::Infinity());
 
-    EXPECT_TRUE(fib.GetCardinality().isInfinite);
+    EXPECT_TRUE(fib.GetOrdinality().isInfinite);
     EXPECT_EQ(fib.GetMaterializedCount(), 0);
 
     // Доступ к 10-му элементу заставляет генератор вычислить и закешировать значения
@@ -31,7 +31,7 @@ TEST(LazySequenceTest, FiniteConstructorsAndEmptyGenerator) {
     int arr[] = {10, 20, 30};
     LazySequence<int> seqFromArray(arr, 3);
 
-    EXPECT_FALSE(seqFromArray.GetCardinality().isInfinite);
+    EXPECT_FALSE(seqFromArray.GetOrdinality().isInfinite);
     EXPECT_EQ(seqFromArray.GetLength(), 3);
     EXPECT_EQ(seqFromArray.Get(1), 20);
     EXPECT_THROW(seqFromArray.Get(3), IndexOutOfRange);
@@ -113,11 +113,11 @@ TEST(LazySequenceTest, InfiniteSequenceConstructorLaziness) {
     appendTracked(initial, 0);
     appendTracked(initial, 1);
 
-    LazySequence<int> fib(fibRule, initial, Cardinal::Infinity());
+    LazySequence<int> fib(fibRule, initial, Ordinal::Infinity());
 
     LazySequence<int> wrapped(&fib);
 
-    EXPECT_TRUE(wrapped.GetCardinality().isInfinite);
+    EXPECT_TRUE(wrapped.GetOrdinality().isInfinite);
     EXPECT_EQ(wrapped.Get(10), 55);
 
     delete initial;
@@ -172,15 +172,15 @@ TEST(LazySequenceTest, ConcatWithInfiniteSequence) {
 
     int win[] = {1};
     LazySequence<int> initialWin(win, 1);
-    LazySequence<int> infiniteSeq(ruleAlwaysOne, &initialWin, Cardinal::Infinity());
+    LazySequence<int> infiniteSeq(ruleAlwaysOne, &initialWin, Ordinal::Infinity());
 
     // Склеиваем: Конечная + Бесконечная
     Sequence<int>* concat1 = finiteSeq.Concat(&infiniteSeq);
     auto* lazyConcat1 = dynamic_cast<LazySequence<int>*>(concat1);
 
     ASSERT_NE(lazyConcat1, nullptr);
-    EXPECT_TRUE(lazyConcat1->GetCardinality().isInfinite);
-    EXPECT_EQ(lazyConcat1->GetCardinality().infiniteCount, 1); // w
+    EXPECT_TRUE(lazyConcat1->GetOrdinality().isInfinite);
+    EXPECT_EQ(lazyConcat1->GetOrdinality().infiniteCount, 1); // w
 
     // Проверяем элементы
     EXPECT_EQ(concat1->Get(0), 10);
@@ -192,8 +192,8 @@ TEST(LazySequenceTest, ConcatWithInfiniteSequence) {
     auto* lazyConcat2 = dynamic_cast<LazySequence<int>*>(concat2);
 
     ASSERT_NE(lazyConcat2, nullptr);
-    EXPECT_TRUE(lazyConcat2->GetCardinality().isInfinite);
-    EXPECT_EQ(lazyConcat2->GetCardinality().infiniteCount, 2); // 2w (две бесконечности)
+    EXPECT_TRUE(lazyConcat2->GetOrdinality().isInfinite);
+    EXPECT_EQ(lazyConcat2->GetOrdinality().infiniteCount, 2); // 2w (две бесконечности)
 
     delete concat1;
     delete concat2;
