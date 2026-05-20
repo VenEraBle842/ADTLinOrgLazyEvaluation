@@ -143,3 +143,79 @@ TEST(LazySequenceTest, EnumeratorAndRangeBasedFor) {
     // 1+2+3+4+5 = 15
     EXPECT_EQ(sum, 15);
 }
+
+TEST(LazySequenceTest, ConcatFiniteSequences) {
+    int arr1[] = {1, 2, 3};
+    int arr2[] = {4, 5};
+    LazySequence<int> seq1(arr1, 3);
+    LazySequence<int> seq2(arr2, 2);
+
+    Sequence<int>* concatenated = seq1.Concat(&seq2);
+
+    EXPECT_EQ(concatenated->GetLength(), 5);
+    EXPECT_EQ(concatenated->Get(0), 1);
+    EXPECT_EQ(concatenated->Get(2), 3);
+    EXPECT_EQ(concatenated->Get(3), 4);
+    EXPECT_EQ(concatenated->Get(4), 5);
+
+    delete concatenated;
+}
+
+// Вспомогательное правило для генерации бесконечной последовательности (например, 1, 1, 1...)
+static int ruleAlwaysOne(Sequence<int>* seq) {
+    return 1;
+}
+
+TEST(LazySequenceTest, ConcatWithInfiniteSequence) {
+    int arr[] = {10, 20};
+    LazySequence<int> finiteSeq(arr, 2);
+
+    int win[] = {1};
+    LazySequence<int> initialWin(win, 1);
+    LazySequence<int> infiniteSeq(ruleAlwaysOne, &initialWin, Cardinal::Infinity());
+
+    // Склеиваем: Конечная + Бесконечная
+    Sequence<int>* concat1 = finiteSeq.Concat(&infiniteSeq);
+    auto* lazyConcat1 = dynamic_cast<LazySequence<int>*>(concat1);
+
+    ASSERT_NE(lazyConcat1, nullptr);
+    EXPECT_TRUE(lazyConcat1->GetCardinality().isInfinite);
+    EXPECT_EQ(lazyConcat1->GetCardinality().infiniteCount, 1); // w
+
+    // Проверяем элементы
+    EXPECT_EQ(concat1->Get(0), 10);
+    EXPECT_EQ(concat1->Get(1), 20);
+    EXPECT_EQ(concat1->Get(2), 1); // Первый элемент бесконечной
+
+    // Склеиваем: Бесконечная + Бесконечная
+    Sequence<int>* concat2 = infiniteSeq.Concat(&infiniteSeq);
+    auto* lazyConcat2 = dynamic_cast<LazySequence<int>*>(concat2);
+
+    ASSERT_NE(lazyConcat2, nullptr);
+    EXPECT_TRUE(lazyConcat2->GetCardinality().isInfinite);
+    EXPECT_EQ(lazyConcat2->GetCardinality().infiniteCount, 2); // 2w (две бесконечности)
+
+    delete concat1;
+    delete concat2;
+}
+
+TEST(LazySequenceTest, ConcatFlatteningPreventsDeepNesting) {
+    int arr[] = {1};
+    LazySequence<int> seq(arr, 1);
+
+    // Искусственно создаем каскад склеек
+    Sequence<int>* c1 = seq.Concat(&seq);
+    Sequence<int>* c2 = c1->Concat(&seq);
+    Sequence<int>* c3 = c2->Concat(&seq);
+
+    // Длина должна быть 4 (т.к. мы 4 раза склеили массив из 1 элемента)
+    EXPECT_EQ(c3->GetLength(), 4);
+    EXPECT_EQ(c3->Get(3), 1);
+
+    // Если бы flattening не работал, тут могли бы быть проблемы со стеком на больших объемах,
+    // но правильность логики GetLength() и Get() подтверждает корректность массива генераторов.
+
+    delete c1;
+    delete c2;
+    delete c3;
+}

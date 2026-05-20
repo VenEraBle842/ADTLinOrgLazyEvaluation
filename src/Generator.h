@@ -36,14 +36,13 @@ class RuleGenerator : public Generator<T> {
     T (*rule)(Sequence<T>*);
     Sequence<T>* window;
     size_t windowSize;
-    bool infinite;
-    size_t limit;
+    Cardinal limitCard;
     size_t generated;
     size_t yieldedFromWindow;
 
 public:
-    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, bool isInfinite = true, size_t lim = 0)
-        : rule(r), infinite(isInfinite), limit(lim), generated(0), yieldedFromWindow(0) {
+    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity())
+        : rule(r), limitCard(card), generated(0), yieldedFromWindow(0) {
         window = new MutableArraySequence<T>();
         windowSize = initialWindow->GetLength();
         for (int i = 0; i < windowSize; ++i) {
@@ -54,8 +53,8 @@ public:
     ~RuleGenerator() override { delete window; }
 
     bool HasNext() const override {
-        if (infinite) return true;
-        return generated < limit;
+        if (limitCard.isInfinite) return true;
+        return generated < limitCard.value;
     }
 
     T GetNext() override {
@@ -83,7 +82,7 @@ public:
     }
 
     Generator<T>* Clone() const override {
-        auto* clone = new RuleGenerator<T>(rule, window, infinite, limit);
+        auto* clone = new RuleGenerator<T>(rule, window, limitCard);
         clone->generated = this->generated;
         clone->yieldedFromWindow = this->yieldedFromWindow;
         return clone;
@@ -97,26 +96,30 @@ template <class T>
 class SequenceGenerator : public Generator<T> {
     const Sequence<T>* seq;
     size_t index;
-    Cardinal length;
+    Cardinal lengthCard;
 
 public:
-    SequenceGenerator(const Sequence<T>* s, bool isInfinite, size_t len, size_t start = 0)
-        : seq(s), index(start), length(isInfinite ? Cardinal::Infinity() : Cardinal(len)) {}
+    SequenceGenerator(const Sequence<T>* s, Cardinal card, size_t start = 0)
+        : seq(s), index(start), lengthCard(card) {}
 
     ~SequenceGenerator() override = default;
 
     bool HasNext() const override {
-        if (length.isInfinite) return true;
-        return index < length.value;
+        if (lengthCard.isInfinite) return true;
+        return index < lengthCard.value;
     }
 
     T GetNext() override {
-        if (!HasNext()) throw IndexOutOfRange("No more elements in SequenceGenerator");
-        return seq->Get(index++);
+        if (!HasNext()) throw IndexOutOfRange("No more elements in generator");
+
+        T val = seq->Get(index);
+        index++;
+        return val;
     }
 
     Generator<T>* Clone() const override {
-        return new SequenceGenerator<T>(seq, length.isInfinite, length.value, index);
+        // При клонировании передаем текущий индекс, чтобы клон продолжил с того же места
+        return new SequenceGenerator<T>(seq, lengthCard, index);
     }
 };
 
@@ -150,6 +153,77 @@ public:
     Generator<T>* Clone() const override {
         // При клонировании создается новый независимый снимок для нового генератора
         return new SnapshotGenerator<T>(snapshot->Clone(), length, index);
+    }
+};
+
+// Объединяет несколько генераторов. Избегает квадратичной сложности (вложенности деревьев)
+// за счет сплющивания (flatten) вложенных ConcatGenerator через метод Merge.
+template <class T>
+class ConcatGenerator : public Generator<T> {
+    Generator<T>** gens;
+    size_t count;
+    size_t capacity;
+    size_t currentIdx;
+
+public:
+    ConcatGenerator() : gens(nullptr), count(0), capacity(0), currentIdx(0) {}
+
+    ConcatGenerator(Generator<T>** existing, size_t c, size_t cap, size_t cur)
+        : count(c), capacity(cap), currentIdx(cur)
+    {
+        if (capacity > 0) {
+            gens = new Generator<T>*[capacity];
+            for (size_t i = 0; i < count; ++i) {
+                gens[i] = existing[i]->Clone();
+            }
+        } else {
+            gens = nullptr;
+        }
+    }
+
+    ~ConcatGenerator() override {
+        for (size_t i = 0; i < count; ++i) delete gens[i];
+        delete[] gens;
+    }
+
+    void AddGenerator(Generator<T>* g) {
+        if (count == capacity) {
+            capacity = capacity == 0 ? 4 : capacity * 2;
+            auto* newGens = new Generator<T>*[capacity];
+            for (size_t i = 0; i < count; ++i) newGens[i] = gens[i];
+            delete[] gens;
+            gens = newGens;
+        }
+        gens[count++] = g;
+    }
+
+    void Merge(const ConcatGenerator<T>* other) {
+        for (size_t i = other->currentIdx; i < other->count; ++i) {
+            AddGenerator(other->gens[i]->Clone());
+        }
+    }
+
+    bool HasNext() const override {
+        size_t tempIdx = currentIdx;
+        while (tempIdx < count) {
+            if (gens[tempIdx]->HasNext()) return true;
+            tempIdx++;
+        }
+        return false;
+    }
+
+    T GetNext() override {
+        while (currentIdx < count) {
+            if (gens[currentIdx]->HasNext()) {
+                return gens[currentIdx]->GetNext();
+            }
+            currentIdx++;
+        }
+        throw IndexOutOfRange("No more elements in ConcatGenerator");
+    }
+
+    Generator<T>* Clone() const override {
+        return new ConcatGenerator<T>(gens, count, capacity, currentIdx);
     }
 };
 

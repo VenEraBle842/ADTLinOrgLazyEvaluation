@@ -83,7 +83,7 @@ public:
     // Конструктор...
     // ... из правила и начального окна
     LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Cardinal card = Cardinal::Infinity()) {
-        generator = new RuleGenerator<T>(rule, initialWindow, card.isInfinite, card.value);
+        generator = new RuleGenerator<T>(rule, initialWindow, card);
         capacity = 8;
         count = 0;
         memoized = new T[capacity];
@@ -114,7 +114,7 @@ public:
             cardinality = Cardinal(seq->GetLength());
         }
 
-        generator = new SequenceGenerator<T>(seq, cardinality.isInfinite, cardinality.value, 0);
+        generator = new SequenceGenerator<T>(seq, cardinality, 0);
     }
 
     ~LazySequence() override {
@@ -150,8 +150,46 @@ public:
 
     // Операции мутации возвращают новую последовательность (Immutable)
 
+    Sequence<T>* Concat(const Sequence<T>* other) override {
+        Cardinal otherCard;
+        if (auto* lazyOther = dynamic_cast<const LazySequence<T>*>(other)) {
+            otherCard = lazyOther->GetCardinality();
+        } else {
+            otherCard = Cardinal(other->GetLength());
+        }
+
+        Cardinal newCard = cardinality + otherCard;
+        auto* newGen = new ConcatGenerator<T>();
+
+        if (count == 0) {
+            if (auto* cgLeft = dynamic_cast<ConcatGenerator<T>*>(this->generator)) {
+                newGen->Merge(cgLeft); // Сплющивание дерева O(N^2)
+            } else {
+                newGen->AddGenerator(this->generator->Clone());
+            }
+        } else {
+            // Если элементы уже закешированы, используем SnapshotGenerator, чтобы не терять их
+            newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), cardinality));
+        }
+
+        if (auto* lazyOther = dynamic_cast<const LazySequence<T>*>(other)) {
+            if (lazyOther->GetMaterializedCount() == 0) {
+                if (auto* cgRight = dynamic_cast<ConcatGenerator<T>*>(lazyOther->generator)) {
+                    newGen->Merge(cgRight);
+                } else {
+                    newGen->AddGenerator(lazyOther->generator->Clone());
+                }
+            } else {
+                newGen->AddGenerator(new SnapshotGenerator<T>(lazyOther->Clone(), otherCard));
+            }
+        } else {
+            newGen->AddGenerator(new SequenceGenerator<T>(other, otherCard, 0));
+        }
+
+        return new LazySequence<T>(newGen, nullptr, 0, 8, newCard);
+    }
+
     Sequence<T>* Append(const T& item) override {
-        // Создаем генератор на основе независимого снимка
         Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), cardinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
