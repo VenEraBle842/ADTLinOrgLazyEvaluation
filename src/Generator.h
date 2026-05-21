@@ -41,8 +41,8 @@ class RuleGenerator : public Generator<T> {
     size_t yieldedFromWindow;
 
 public:
-    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, Ordinal Ord = Ordinal::Infinity())
-        : rule(r), limitOrd(Ord), generated(0), yieldedFromWindow(0) {
+    RuleGenerator(T (*r)(Sequence<T>*), const Sequence<T>* initialWindow, Ordinal ord = Ordinal::Infinity())
+        : rule(r), limitOrd(ord), generated(0), yieldedFromWindow(0) {
         window = new MutableArraySequence<T>();
         windowSize = initialWindow->GetLength();
         for (int i = 0; i < windowSize; ++i) {
@@ -99,8 +99,8 @@ class SequenceGenerator : public Generator<T> {
     Ordinal lengthOrd;
 
 public:
-    SequenceGenerator(const Sequence<T>* s, Ordinal Ord, size_t start = 0)
-        : seq(s), index(start), lengthOrd(Ord) {}
+    SequenceGenerator(const Sequence<T>* s, Ordinal ord, size_t start = 0)
+        : seq(s), index(start), lengthOrd(ord) {}
 
     ~SequenceGenerator() override = default;
 
@@ -133,8 +133,8 @@ class SnapshotGenerator : public Generator<T> {
     Ordinal length;
 
 public:
-    SnapshotGenerator(Sequence<T>* seqSnapshot, Ordinal Ord, size_t startIdx = 0)
-        : snapshot(seqSnapshot), index(startIdx), length(Ord) {}
+    SnapshotGenerator(Sequence<T>* seqSnapshot, Ordinal ord, size_t startIdx = 0)
+        : snapshot(seqSnapshot), index(startIdx), length(ord) {}
 
     ~SnapshotGenerator() override {
         delete snapshot; // RAII: удаляем снимок по причине единоличного владения

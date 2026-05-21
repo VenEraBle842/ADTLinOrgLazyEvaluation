@@ -9,15 +9,15 @@ TEST(StreamTest, SequenceStreamRead) {
     appendTracked(arr, 20);
     appendTracked(arr, 30);
 
-    SequenceStream<int> stream(arr);
+    SequenceInputStream<int> stream(arr);
 
     EXPECT_FALSE(stream.IsEndOfStream());
-    EXPECT_EQ(stream.Read(), 10);
+    EXPECT_EQ(stream.Input(), 10);
     EXPECT_EQ(stream.GetPosition(), 1);
-    EXPECT_EQ(stream.Read(), 20);
+    EXPECT_EQ(stream.Input(), 20);
 
     stream.Seek(0);
-    EXPECT_EQ(stream.Read(), 10);
+    EXPECT_EQ(stream.Input(), 10);
 
     delete arr;
 }
@@ -27,15 +27,15 @@ TEST(StreamTest, SequenceStreamLazyRead) {
     int arr[] = {100, 200, 300};
     LazySequence<int> lazy(arr, 3);
 
-    SequenceStream<int> stream(&lazy);
+    SequenceInputStream<int> stream(&lazy);
 
     EXPECT_FALSE(stream.IsEndOfStream());
-    EXPECT_EQ(stream.Read(), 100);
+    EXPECT_EQ(stream.Input(), 100);
     EXPECT_EQ(stream.GetPosition(), 1);
-    EXPECT_EQ(stream.Read(), 200);
-    EXPECT_EQ(stream.Read(), 300);
+    EXPECT_EQ(stream.Input(), 200);
+    EXPECT_EQ(stream.Input(), 300);
     EXPECT_TRUE(stream.IsEndOfStream());
-    EXPECT_THROW(stream.Read(), IndexOutOfRange);
+    EXPECT_THROW(stream.Input(), IndexOutOfRange);
 }
 
 // --- Инфраструктура для теста "Defensive Programming" ---
@@ -69,10 +69,10 @@ TEST(StreamTest, SequenceStreamFallbackDefensiveTest) {
     BrokenIteratorSequence brokenSeq;
 
     EXPECT_NO_THROW({
-        SequenceStream<int> stream(&brokenSeq);
+        SequenceInputStream<int> stream(&brokenSeq);
 
-        EXPECT_EQ(stream.Read(), 42);
-        EXPECT_EQ(stream.Read(), 84);
+        EXPECT_EQ(stream.Input(), 42);
+        EXPECT_EQ(stream.Input(), 84);
         EXPECT_TRUE(stream.IsEndOfStream());
     });
 }

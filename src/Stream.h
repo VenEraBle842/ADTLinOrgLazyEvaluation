@@ -8,11 +8,11 @@
 
 // Общий интерфейс потока только для чтения
 template <class T>
-class ReadOnlyStream {
+class InputStream {
 public:
-    virtual ~ReadOnlyStream() = default;
+    virtual ~InputStream() = default;
     virtual bool IsEndOfStream() const = 0;
-    virtual T Read() = 0;
+    virtual T Input() = 0;
     virtual size_t GetPosition() const = 0;
     virtual bool IsCanSeek() const = 0;
     virtual size_t Seek(size_t index) = 0;
@@ -23,18 +23,18 @@ public:
 
 // Общий интерфейс потока только для записи
 template <class T>
-class WriteOnlyStream {
+class OutputStream {
 public:
-    virtual ~WriteOnlyStream() = default;
+    virtual ~OutputStream() = default;
     virtual size_t GetPosition() const = 0;
-    virtual size_t Write(T item) = 0;
+    virtual size_t Output(T item) = 0;
     virtual void Open() = 0;
     virtual void Close() = 0;
 };
 
 // Универсальная реализация потока поверх любой коллекции Sequence
 template <class T>
-class SequenceStream : public ReadOnlyStream<T> {
+class SequenceInputStream : public InputStream<T> {
     const Sequence<T>* seq;
     IEnumerator<T>* enumerator; // Итератор для O(1) последовательного чтения
     size_t position;
@@ -42,7 +42,7 @@ class SequenceStream : public ReadOnlyStream<T> {
     Ordinal length;
 
 public:
-    explicit SequenceStream(const Sequence<T>* sequence) : seq(sequence), enumerator(nullptr), position(0) {
+    explicit SequenceInputStream(const Sequence<T>* sequence) : seq(sequence), enumerator(nullptr), position(0) {
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
             isLazy = true;
             length = lazy->GetOrdinality();
@@ -58,7 +58,7 @@ public:
         }
     }
 
-    ~SequenceStream() override {
+    ~SequenceInputStream() override {
         delete enumerator;
     }
 
@@ -67,7 +67,7 @@ public:
         return position >= length.value;
     }
 
-    T Read() override {
+    T Input() override {
         if (IsEndOfStream()) throw IndexOutOfRange("End of stream");
 
         T val;
@@ -122,20 +122,20 @@ public:
 };
 
 // Физический файловый поток специально для посимвольного чтения.
-// Наследуется от сгенерированного компилятором ReadOnlyStream<char>.
-class FileCharStream : public ReadOnlyStream<char> {
+// Наследуется от сгенерированного компилятором InputStream<char>.
+class FileInputStream : public InputStream<char> {
     mutable std::ifstream file;
     std::string path;
     size_t position;
 
 public:
-    explicit FileCharStream(const std::string& filePath) : path(filePath), position(0) {
+    explicit FileInputStream(const std::string& filePath) : path(filePath), position(0) {
         if (!file.is_open()) {
             file.open(path);
         }
     }
 
-    ~FileCharStream() override {
+    ~FileInputStream() override {
         if (file.is_open()) {
             file.close();
         }
@@ -145,7 +145,7 @@ public:
         return !file.is_open() || file.eof() || file.peek() == EOF;
     }
 
-    char Read() override {
+    char Input() override {
         if (IsEndOfStream()) throw IndexOutOfRange("End of stream");
         char c;
         file.get(c);
@@ -155,7 +155,7 @@ public:
 
     size_t GetPosition() const override { return position; }
     bool IsCanSeek() const override { return false; }
-    size_t Seek(size_t index) override { throw std::logic_error("Cannot seek in FileCharStream"); }
+    size_t Seek(size_t index) override { throw std::logic_error("Cannot seek in FileInputStream"); }
     bool IsCanGoBack() const override { return false; }
 
     void Open() override {

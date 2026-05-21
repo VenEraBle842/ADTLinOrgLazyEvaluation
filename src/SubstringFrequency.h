@@ -118,14 +118,14 @@ public:
         }
     }
 
-    int* ProcessStream(ReadOnlyStream<char>* stream) {
+    int* ProcessStream(InputStream<char>* stream) {
         int* frequencies = new int[patternCount]();
         Node* current = root;
 
         while (!stream->IsEndOfStream()) {
             char c;
             try {
-                c = stream->Read();
+                c = stream->Input();
             } catch (...) { break; }
 
             auto uc = static_cast<unsigned char>(c);

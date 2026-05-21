@@ -14,7 +14,7 @@ void RunAutoMode() {
     std::string patterns[] = {"abacaba", "bad", "caba", "xyz"};
     AhoCorasick ac(patterns, 4);
 
-    FileCharStream fstream("load_test.txt");
+    FileInputStream fstream("load_test.txt");
 
     std::cout << "[*] Running Aho-Corasick over 1M char stream in O(N)..." << std::endl;
     int* freqs = ac.ProcessStream(&fstream);
@@ -40,7 +40,7 @@ void RunManualMode() {
 
     Sequence<char>* seq = new MutableArraySequence<char>();
     for(char c : text) appendTracked(seq, c);
-    SequenceStream<char> stream(seq);
+    SequenceInputStream<char> stream(seq);
 
     int* freqs = ac.ProcessStream(&stream);
     std::cout << "Frequency of '" << pattern << "': " << freqs[0] << std::endl;

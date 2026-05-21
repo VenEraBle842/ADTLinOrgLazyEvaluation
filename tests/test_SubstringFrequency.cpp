@@ -13,7 +13,7 @@ TEST(AhoCorasickTest, StreamProcessing) {
     std::string text = "ushers";
     for (char c : text) appendTracked(charSeq, c);
 
-    SequenceStream<char> stream(charSeq);
+    SequenceInputStream<char> stream(charSeq);
 
     int* freqs = ac.ProcessStream(&stream);
 
