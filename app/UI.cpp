@@ -1,15 +1,19 @@
 #include <iostream>
 #include <string>
-#include <fstream>
+#include <limits>
 #include "../src/SubstringFrequency.h"
-#include "../src/Stream.h"
-#include "ArraySequence.h"
 
 void RunAutoMode() {
     std::cout << "[*] Generating massive test file (1 000 000 chars)..." << std::endl;
-    std::ofstream out("load_test.txt");
-    for(int i = 0; i < 100000; ++i) out << "ababacabad";
-    out.close();
+
+    FileOutputStream out("load_test.txt");
+    const std::string chunk = "ababacabad";
+    for(int i = 0; i < 100000; ++i) {
+        for(char c : chunk) {
+            out.Output(c);
+        }
+    }
+    out.Close();
 
     std::string patterns[] = {"abacaba", "bad", "caba", "xyz"};
     AhoCorasick ac(patterns, 4);
@@ -27,19 +31,25 @@ void RunAutoMode() {
 }
 
 void RunManualMode() {
-    std::cout << "Enter text to search in: ";
-    std::string text;
-    std::cin >> text;
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-    std::cout << "Enter pattern to search: ";
+    std::cout << "Enter text to search in (can include spaces): ";
+    std::string text;
+    std::getline(std::cin, text);
+
+    std::cout << "Enter pattern to search (can include spaces): ";
     std::string pattern;
-    std::cin >> pattern;
+    std::getline(std::cin, pattern);
 
     std::string patterns[] = {pattern};
     AhoCorasick ac(patterns, 1);
 
-    Sequence<char>* seq = new MutableArraySequence<char>();
-    for(char c : text) appendTracked(seq, c);
+    SequenceOutputStream<char> outStream;
+    for(char c : text) {
+        outStream.Output(c);
+    }
+
+    Sequence<char>* seq = outStream.ReleaseSequence(); // Забрали у потока записи, отдали потоку чтения
     SequenceInputStream<char> stream(seq);
 
     int* freqs = ac.ProcessStream(&stream);
@@ -58,7 +68,11 @@ void StartUI() {
         std::cout << "Choice: ";
 
         int choice;
-        std::cin >> choice;
+        if (!(std::cin >> choice)) {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            continue;
+        }
 
         if (choice == 1) RunManualMode();
         else if (choice == 2) RunAutoMode();

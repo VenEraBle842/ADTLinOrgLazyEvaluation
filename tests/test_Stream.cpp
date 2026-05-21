@@ -3,7 +3,7 @@
 #include "../src/LazySequence.h"
 #include "ArraySequence.h"
 
-TEST(StreamTest, SequenceStreamRead) {
+TEST(StreamTest, SequenceInputStream) {
     Sequence<int>* arr = new MutableArraySequence<int>();
     appendTracked(arr, 10);
     appendTracked(arr, 20);
@@ -23,7 +23,7 @@ TEST(StreamTest, SequenceStreamRead) {
 }
 
 // Тест успешного чтения из ленивой коллекции
-TEST(StreamTest, SequenceStreamLazyRead) {
+TEST(StreamTest, SequenceInputStreamLazy) {
     int arr[] = {100, 200, 300};
     LazySequence<int> lazy(arr, 3);
 
@@ -75,4 +75,59 @@ TEST(StreamTest, SequenceStreamFallbackDefensiveTest) {
         EXPECT_EQ(stream.Input(), 84);
         EXPECT_TRUE(stream.IsEndOfStream());
     });
+}
+
+TEST(StreamTest, SequenceOutputStreamDefaultCreation) {
+    SequenceOutputStream<int> outStream;
+
+    EXPECT_EQ(outStream.GetPosition(), 0);
+
+    outStream.Output(10);
+    outStream.Output(20);
+    outStream.Output(30);
+
+    EXPECT_EQ(outStream.GetPosition(), 3);
+
+    // Забираем итоговую коллекцию для проверки
+    Sequence<int>* seq = outStream.GetSequence();
+    ASSERT_NE(seq, nullptr);
+    EXPECT_EQ(seq->GetLength(), 3);
+    EXPECT_EQ(seq->Get(0), 10);
+    EXPECT_EQ(seq->Get(1), 20);
+    EXPECT_EQ(seq->Get(2), 30);
+
+    // Память за seq очистит деструктор SequenceOutputStream,
+    // т.к. мы не вызывали ReleaseSequence().
+}
+
+TEST(StreamTest, SequenceOutputStreamWrapExisting) {
+    // 1. Создаем базовую коллекцию
+    Sequence<int>* baseSeq = new MutableArraySequence<int>();
+
+    // Безопасно добавляем элемент (appendTracked сам удалит старый baseSeq, если выделится новая память,
+    // и обновит указатель baseSeq)
+    appendTracked(baseSeq, 99);
+
+    // 2. Обертываем потоком
+    SequenceOutputStream<int> outStream(baseSeq);
+
+    EXPECT_EQ(outStream.GetPosition(), 1);
+
+    outStream.Output(100);
+    outStream.Output(101);
+
+    EXPECT_EQ(outStream.GetPosition(), 3);
+
+    // 3. Получаем финальный актуальный указатель
+    Sequence<int>* finalSeq = outStream.GetSequence();
+
+    EXPECT_EQ(finalSeq->GetLength(), 3);
+    EXPECT_EQ(finalSeq->Get(0), 99);
+    EXPECT_EQ(finalSeq->Get(1), 100);
+    EXPECT_EQ(finalSeq->Get(2), 101);
+
+    // 4. Очищаем память.
+    // Если массив не пересоздавался, то finalSeq == baseSeq, и мы удаляем память baseSeq.
+    // Если пересоздавался, старый baseSeq уже удален внутри потока, а мы удаляем новый finalSeq.
+    delete finalSeq;
 }
