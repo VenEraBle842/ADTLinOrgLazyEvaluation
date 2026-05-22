@@ -267,17 +267,14 @@ class ModifiedGenerator : public Generator<T> {
         if (hasBufferedItem) return;
 
         while (true) {
-            bool inserted = false;
             for (size_t i = 0; i < opsCount; ++i) {
                 if (ops[i].type == Operation::INSERT && ops[i].index == outIndex && !ops[i].executed) {
                     bufferedNext = Option<T>::Some(ops[i].item);
                     hasBufferedItem = true;
                     ops[i].executed = true;
-                    inserted = true;
-                    break;
+                    return;
                 }
             }
-            if (inserted) return;
 
             if (baseGen->HasNext()) {
                 T val = baseGen->GetNext();
@@ -300,18 +297,15 @@ class ModifiedGenerator : public Generator<T> {
                 return;
             }
 
-            bool appended = false;
             for (size_t i = appendIndex; i < opsCount; ++i) {
                 if (ops[i].type == Operation::APPEND && !ops[i].executed) {
                     bufferedNext = Option<T>::Some(ops[i].item);
                     hasBufferedItem = true;
                     ops[i].executed = true;
                     appendIndex = i + 1;
-                    appended = true;
-                    break;
+                    return;
                 }
             }
-            if (appended) return;
 
             break;
         }
