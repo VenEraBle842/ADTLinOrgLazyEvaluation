@@ -13,7 +13,7 @@ class LazySequence : public Sequence<T> {
     mutable T* memoized; // Внутренний массив для максимальной скорости мемоизации
     mutable size_t count;
     mutable size_t capacity;
-    Ordinal Ordinality;
+    Ordinal ordinality;
 
     // Закрытый конструктор для внутренних операций клонирования
     LazySequence(Generator<T>* gen, const T* mem, size_t c, size_t cap, Ordinal ord) {
@@ -26,7 +26,7 @@ class LazySequence : public Sequence<T> {
         } else {
             memoized = nullptr;
         }
-        Ordinality = ord;
+        ordinality = ord;
     }
 
     // Принудительное вычисление до нужного индекса
@@ -87,7 +87,7 @@ public:
         capacity = 8;
         count = 0;
         memoized = new T[capacity];
-        Ordinality = ord;
+        ordinality = ord;
     }
 
     // ... пустой
@@ -109,12 +109,12 @@ public:
 
         // Безопасное определение мощности без полного вычисления:
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
-            Ordinality = lazy->GetOrdinality();
+            ordinality = lazy->GetOrdinality();
         } else {
-            Ordinality = Ordinal(seq->GetLength());
+            ordinality = Ordinal(seq->GetLength());
         }
 
-        generator = new SequenceGenerator<T>(seq, Ordinality, 0);
+        generator = new SequenceGenerator<T>(seq, ordinality, 0);
     }
 
     ~LazySequence() override {
@@ -122,16 +122,16 @@ public:
         delete[] memoized;
     }
 
-    Ordinal GetOrdinality() const { return Ordinality; }
+    Ordinal GetOrdinality() const { return ordinality; }
     size_t GetMaterializedCount() const { return count; }
 
     // --- Строгая реализация чисто виртуальных методов интерфейса Sequence<T> ---
 
     const T& GetFirst() const override { return Get(0); }
     const T& GetLast() const override {
-        if (Ordinality.isInfinite) throw std::logic_error("Cannot get last element of infinite sequence");
-        if (Ordinality.value == 0) throw IndexOutOfRange("Sequence is empty");
-        return Get(static_cast<int>(Ordinality.value) - 1);
+        if (ordinality.isInfinite) throw std::logic_error("Cannot get last element of infinite sequence");
+        if (ordinality.value == 0) throw IndexOutOfRange("Sequence is empty");
+        return Get(static_cast<int>(ordinality.value) - 1);
     }
 
     const T& Get(int index) const override {
@@ -141,9 +141,9 @@ public:
     }
 
     int GetLength() const override {
-        if (Ordinality.isInfinite) throw std::logic_error("Cannot get length of infinite sequence");
-        if (Ordinality.value > 0) {
-            EnsureMaterialized(Ordinality.value - 1);
+        if (ordinality.isInfinite) throw std::logic_error("Cannot get length of infinite sequence");
+        if (ordinality.value > 0) {
+            EnsureMaterialized(ordinality.value - 1);
         }
         return static_cast<int>(count);
     }
@@ -158,7 +158,7 @@ public:
             otherOrd = Ordinal(other->GetLength());
         }
 
-        Ordinal newOrd = Ordinality + otherOrd;
+        Ordinal newOrd = ordinality + otherOrd;
         auto* newGen = new ConcatGenerator<T>();
 
         if (count == 0) {
@@ -169,7 +169,7 @@ public:
             }
         } else {
             // Если элементы уже закешированы, используем SnapshotGenerator, чтобы не терять их
-            newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), Ordinality));
+            newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), ordinality));
         }
 
         if (auto* lazyOther = dynamic_cast<const LazySequence<T>*>(other)) {
@@ -190,7 +190,7 @@ public:
     }
 
     Sequence<T>* Append(const T& item) override {
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->AppendOp(item);
@@ -198,7 +198,7 @@ public:
         delete modGen;
         delete baseGen;
 
-        Ordinal newOrd = Ordinality + Ordinal(1);
+        Ordinal newOrd = ordinality + Ordinal(1);
         return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
@@ -208,11 +208,11 @@ public:
 
     Sequence<T>* InsertAt(const T& item, int index) override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
-        if (!Ordinality.isInfinite && static_cast<size_t>(index) > Ordinality.value) {
+        if (!ordinality.isInfinite && static_cast<size_t>(index) > ordinality.value) {
             throw IndexOutOfRange("Index out of bounds");
         }
 
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->InsertOp(item, static_cast<size_t>(index));
@@ -220,7 +220,7 @@ public:
         delete modGen;
         delete baseGen;
 
-        Ordinal newOrd = Ordinality + Ordinal(1);
+        Ordinal newOrd = ordinality + Ordinal(1);
         return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
@@ -229,22 +229,22 @@ public:
     }
 
     Sequence<T>* RemoveLast() override {
-        if (Ordinality.isInfinite) {
+        if (ordinality.isInfinite) {
             throw std::logic_error("Cannot remove the last element from an infinite sequence");
         }
-        if (Ordinality.value == 0) {
+        if (ordinality.value == 0) {
             throw IndexOutOfRange("Cannot remove from an empty sequence");
         }
-        return RemoveAt(static_cast<int>(Ordinality.value) - 1);
+        return RemoveAt(static_cast<int>(ordinality.value) - 1);
     }
 
     Sequence<T>* RemoveAt(int index) override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
-        if (!Ordinality.isInfinite && static_cast<size_t>(index) >= Ordinality.value) {
+        if (!ordinality.isInfinite && static_cast<size_t>(index) >= ordinality.value) {
             throw IndexOutOfRange("Index out of bounds");
         }
 
-        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), Ordinality);
+        Generator<T>* baseGen = new SnapshotGenerator<T>(this->Clone(), ordinality);
 
         auto* modGen = new ModifiedGenerator<T>(baseGen);
         ModifiedGenerator<T>* finalGen = modGen->RemoveOp(static_cast<size_t>(index));
@@ -252,7 +252,7 @@ public:
         delete modGen;
         delete baseGen;
 
-        Ordinal newOrd = Ordinality - Ordinal(1);
+        Ordinal newOrd = ordinality - Ordinal(1);
         return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
     }
 
@@ -260,7 +260,7 @@ public:
         if (startIndex < 0 || endIndex < startIndex) {
             throw IndexOutOfRange("Invalid indices for subsequence");
         }
-        if (!Ordinality.isInfinite && static_cast<size_t>(endIndex) >= Ordinality.value) {
+        if (!ordinality.isInfinite && static_cast<size_t>(endIndex) >= ordinality.value) {
             throw IndexOutOfRange("End index out of bounds");
         }
 
@@ -270,7 +270,7 @@ public:
     }
 
     Sequence<T>* Clone() const override {
-        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, Ordinality);
+        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, ordinality);
     }
 
     Sequence<T>* Instance() override { return new LazySequence<T>(); }
