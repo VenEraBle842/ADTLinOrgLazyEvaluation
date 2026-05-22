@@ -95,7 +95,7 @@ public:
 
     // ... копирования
     LazySequence(const LazySequence<T>& other)
-        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.Ordinality) {}
+        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.ordinality) {}
 
     // ... из обычного массива
     LazySequence(const T* items, size_t size)
