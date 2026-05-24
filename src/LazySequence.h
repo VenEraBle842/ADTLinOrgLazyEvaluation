@@ -10,39 +10,25 @@
 template <class T>
 class LazySequence : public Sequence<T> {
     mutable Generator<T>* generator;
-    mutable T* memoized; // Внутренний массив для максимальной скорости мемоизации
-    mutable size_t count;
-    mutable size_t capacity;
+    mutable Sequence<T>* memoized;
     Ordinal ordinality;
 
     // Закрытый конструктор для внутренних операций клонирования
-    LazySequence(Generator<T>* gen, const T* mem, size_t c, size_t cap, Ordinal ord) {
+    LazySequence(Generator<T>* gen, const T* mem, size_t c, Ordinal ord) {
         generator = gen;
-        capacity = cap;
-        count = c;
-        if (capacity > 0) {
-            memoized = new T[capacity];
-            for (size_t i = 0; i < count; ++i) memoized[i] = mem[i];
-        } else {
-            memoized = nullptr;
+        memoized = new MutableArraySequence<T>();
+        for (size_t i = 0; i < c; ++i) {
+            appendTracked(memoized, mem[i]);
         }
         ordinality = ord;
     }
 
     // Принудительное вычисление до нужного индекса
     void EnsureMaterialized(size_t index) const {
-        while (count <= index && generator->HasNext()) {
-            if (count == capacity) {
-                size_t newCap = capacity == 0 ? 8 : capacity * 2;
-                T* newMem = new T[newCap];
-                for (size_t i = 0; i < count; ++i) newMem[i] = memoized[i];
-                delete[] memoized;
-                memoized = newMem;
-                capacity = newCap;
-            }
-            memoized[count++] = generator->GetNext();
+        while (static_cast<size_t>(memoized->GetLength()) <= index && generator->HasNext()) {
+            appendTracked(memoized, generator->GetNext());
         }
-        if (count <= index) throw IndexOutOfRange("Index out of bounds");
+        if (static_cast<size_t>(memoized->GetLength()) <= index) throw IndexOutOfRange("Index out of bounds");
     }
 
     // Класс итератора специально для ленивой коллекции
@@ -58,7 +44,6 @@ class LazySequence : public Sequence<T> {
 
         bool MoveNext() override {
             Ordinal ord = seq->GetOrdinality();
-            // Проверяем, не вышли ли мы за пределы (для бесконечных всегда true)
             if (ord.isInfinite || currentIndex < ord.value) {
                 currentItem = seq->Get(currentIndex++);
                 hasCurrent = true;
@@ -84,30 +69,28 @@ public:
     // ... из правила и начального окна
     LazySequence(T (*rule)(Sequence<T>*), const Sequence<T>* initialWindow, Ordinal ord = Ordinal::Infinity()) {
         generator = new RuleGenerator<T>(rule, initialWindow, ord);
-        capacity = 8;
-        count = 0;
-        memoized = new T[capacity];
+        memoized = new MutableArraySequence<T>();
         ordinality = ord;
     }
 
     // ... пустой
-    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, 8, Ordinal(0)) {}
+    LazySequence() : LazySequence(new EmptyGenerator<T>(), nullptr, 0, Ordinal(0)) {}
 
     // ... копирования
-    LazySequence(const LazySequence<T>& other)
-        : LazySequence(other.generator->Clone(), other.memoized, other.count, other.capacity, other.ordinality) {}
+    LazySequence(const LazySequence<T>& other) {
+        generator = other.generator->Clone();
+        memoized = other.memoized->Clone();
+        ordinality = other.ordinality;
+    }
 
     // ... из обычного массива
     LazySequence(const T* items, size_t size)
-        : LazySequence(new EmptyGenerator<T>(), items, size, size == 0 ? 8 : size, Ordinal(size)) {}
+    : LazySequence(new EmptyGenerator<T>(), items, size, Ordinal(size)) {}
 
     // ... обертки
     explicit LazySequence(const Sequence<T>* seq) {
-        count = 0;
-        capacity = 8;
-        memoized = new T[capacity];
+        memoized = new MutableArraySequence<T>();
 
-        // Безопасное определение мощности без полного вычисления:
         if (auto* lazy = dynamic_cast<const LazySequence<T>*>(seq)) {
             ordinality = lazy->GetOrdinality();
         } else {
@@ -119,11 +102,11 @@ public:
 
     ~LazySequence() override {
         delete generator;
-        delete[] memoized;
+        delete memoized;
     }
 
     Ordinal GetOrdinality() const { return ordinality; }
-    size_t GetMaterializedCount() const { return count; }
+    size_t GetMaterializedCount() const { return static_cast<size_t>(memoized->GetLength()); }
 
     // --- Строгая реализация чисто виртуальных методов интерфейса Sequence<T> ---
 
@@ -136,8 +119,8 @@ public:
 
     const T& Get(int index) const override {
         if (index < 0) throw IndexOutOfRange("Index out of bounds");
-        EnsureMaterialized(index);
-        return memoized[index];
+        EnsureMaterialized(static_cast<size_t>(index));
+        return memoized->Get(index);
     }
 
     int GetLength() const override {
@@ -145,7 +128,7 @@ public:
         if (ordinality.value > 0) {
             EnsureMaterialized(ordinality.value - 1);
         }
-        return static_cast<int>(count);
+        return memoized->GetLength();
     }
 
     // Операции мутации возвращают новую последовательность (Immutable)
@@ -161,14 +144,13 @@ public:
         Ordinal newOrd = ordinality + otherOrd;
         auto* newGen = new ConcatGenerator<T>();
 
-        if (count == 0) {
+        if (memoized->GetLength() == 0) {
             if (auto* cgLeft = dynamic_cast<ConcatGenerator<T>*>(this->generator)) {
-                newGen->Merge(cgLeft); // Сплющивание дерева O(N^2)
+                newGen->Merge(cgLeft);
             } else {
                 newGen->AddGenerator(this->generator->Clone());
             }
         } else {
-            // Если элементы уже закешированы, используем SnapshotGenerator, чтобы не терять их
             newGen->AddGenerator(new SnapshotGenerator<T>(this->Clone(), ordinality));
         }
 
@@ -186,7 +168,7 @@ public:
             newGen->AddGenerator(new SequenceGenerator<T>(other, otherOrd, 0));
         }
 
-        return new LazySequence<T>(newGen, nullptr, 0, 8, newOrd);
+        return new LazySequence<T>(newGen, nullptr, 0, newOrd);
     }
 
     Sequence<T>* Append(const T& item) override {
@@ -199,7 +181,7 @@ public:
         delete baseGen;
 
         Ordinal newOrd = ordinality + Ordinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
+        return new LazySequence<T>(finalGen, nullptr, 0, newOrd);
     }
 
     Sequence<T>* Prepend(const T& item) override {
@@ -221,7 +203,7 @@ public:
         delete baseGen;
 
         Ordinal newOrd = ordinality + Ordinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
+        return new LazySequence<T>(finalGen, nullptr, 0, newOrd);
     }
 
     Sequence<T>* RemoveFirst() override {
@@ -253,7 +235,7 @@ public:
         delete baseGen;
 
         Ordinal newOrd = ordinality - Ordinal(1);
-        return new LazySequence<T>(finalGen, nullptr, 0, 8, newOrd);
+        return new LazySequence<T>(finalGen, nullptr, 0, newOrd);
     }
 
     Sequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
@@ -265,12 +247,11 @@ public:
         }
 
         EnsureMaterialized(endIndex);
-        size_t newSize = endIndex - startIndex + 1;
-        return new LazySequence<T>(memoized + startIndex, newSize);
+        return memoized->GetSubsequence(startIndex, endIndex);
     }
 
     Sequence<T>* Clone() const override {
-        return new LazySequence<T>(generator->Clone(), memoized, count, capacity, ordinality);
+        return new LazySequence<T>(*this);
     }
 
     Sequence<T>* Instance() override { return new LazySequence<T>(); }

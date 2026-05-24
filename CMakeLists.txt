@@ -37,6 +37,7 @@ add_executable(Tests
         tests/test_LazySequence.cpp
         tests/test_Stream.cpp
         tests/test_SubstringFrequency.cpp
+        tests/test_Trie.cpp
 )
 
 target_include_directories(Tests PRIVATE

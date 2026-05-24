@@ -1,137 +1,45 @@
 #pragma once
 #include "Stream.h"
+#include "Trie.h"
 #include <string>
 
-// Реализация алгоритма Ахо-Корасик за O(N) для поиска подстрок в потоке.
+// Шаблонный класс алгоритма Ахо-Корасик за O(N) для поиска подстрок в потоке.
+template <class CharT = char>
 class AhoCorasick {
-    template <class T>
-    struct ArrayList {
-        T* data;
-        int count;
-        int capacity;
-
-        explicit ArrayList(int initCapacity = 2) : count(0), capacity(initCapacity) {
-            data = new T[capacity];
-        }
-
-        ~ArrayList() { delete[] data; }
-
-        // Запрет копирования: защита от случайного двойного освобождения памяти (Double Free)
-        ArrayList(const ArrayList&) = delete;
-        ArrayList& operator=(const ArrayList&) = delete;
-
-        void Add(T item) {
-            if (count == capacity) {
-                capacity *= 2;
-                T* newData = new T[capacity];
-                for (int i = 0; i < count; ++i) newData[i] = data[i];
-                delete[] data;
-                data = newData;
-            }
-            data[count++] = item;
-        }
-    };
-
-    struct Node {
-        Node* children[256] = {nullptr};
-        Node* fail = nullptr;
-        ArrayList<size_t> matchIndices;
-
-        Node() = default;
-    };
-
-    ArrayList<Node*> tracker; // Отслеживает все вызовы new Node()
-    Node* root;
+    Trie<CharT> trie;
     size_t patternCount;
 
-    class NodeQueue {
-        Node** data;
-        int head = 0, tail = 0;
-    public:
-        explicit NodeQueue(int capacity) { data = new Node*[capacity]; }
-        ~NodeQueue() { delete[] data; }
-        NodeQueue(const NodeQueue&) = delete;
-        NodeQueue& operator=(const NodeQueue&) = delete;
-
-        void Push(Node* n) { data[tail++] = n; }
-        Node* Pop() { return data[head++]; }
-        bool IsEmpty() const { return head == tail; }
-    };
-
 public:
-    AhoCorasick(const std::string* patterns, size_t count) {
-        root = new Node();
-        tracker.Add(root); // Запоминаем корень
-        patternCount = count;
-
-        // Построение Trie
+    // Используем std::basic_string<CharT>, чтобы поддерживать как std::string (char), так и std::wstring (wchar_t)
+    AhoCorasick(const std::basic_string<CharT>* patterns, size_t count) : patternCount(count) {
+        // 1. Наполняем Бор паттернами
         for (size_t i = 0; i < count; ++i) {
-            Node* current = root;
-            for (char c : patterns[i]) {
-                auto uc = static_cast<unsigned char>(c);
-                if (!current->children[uc]) {
-                    current->children[uc] = new Node();
-                    tracker.Add(current->children[uc]); // Запоминаем каждый новый узел
-                }
-                current = current->children[uc];
-            }
-            current->matchIndices.Add(i);
+            trie.Insert(patterns[i].c_str(), patterns[i].length(), i);
         }
 
-        // Построение суффиксных ссылок (fail) через BFS
-        NodeQueue queue(tracker.count);
-        root->fail = root;
-
-        for (auto & i : root->children) {
-            if (i) {
-                i->fail = root;
-                queue.Push(i);
-            } else {
-                i = root; // Автоматная оптимизация
-            }
-        }
-
-        while (!queue.IsEmpty()) {
-            Node* current = queue.Pop();
-            for (int i = 0; i < 256; ++i) {
-                if (current->children[i] && current->children[i] != root) {
-                    Node* child = current->children[i];
-                    Node* failNode = current->fail;
-                    child->fail = failNode->children[i];
-
-                    // Слияние совпадений из узла ошибки
-                    for(int m = 0; m < child->fail->matchIndices.count; ++m) {
-                        child->matchIndices.Add(child->fail->matchIndices.data[m]);
-                    }
-                    queue.Push(child);
-                } else if (!current->children[i]) {
-                    current->children[i] = current->fail->children[i]; // Создает циклические ссылки!
-                }
-            }
-        }
+        // 2. Строим суффиксные ссылки Ахо-Корасик
+        trie.BuildFailLinks();
     }
 
-    ~AhoCorasick() {
-        // Проходим по нашему трекеру и удаляем каждый узел ровно один раз
-        for (int i = 0; i < tracker.count; ++i) {
-            delete tracker.data[i];
-        }
-    }
+    ~AhoCorasick() = default;
 
-    int* ProcessStream(InputStream<char>* stream) {
+    int* ProcessStream(InputStream<CharT>* stream) {
         int* frequencies = new int[patternCount]();
-        Node* current = root;
+        typename Trie<CharT>::Node* current = trie.GetRoot();
 
         while (!stream->IsEndOfStream()) {
-            char c;
+            CharT c;
             try {
                 c = stream->Input();
             } catch (...) { break; }
 
-            auto uc = static_cast<unsigned char>(c);
-            current = current->children[uc];
-            for (int i = 0; i < current->matchIndices.count; ++i) {
-                frequencies[current->matchIndices.data[i]]++;
+            // Переход по символу через NFA-логику дерева
+            current = trie.Transition(current, c);
+
+            // Фиксируем совпадения
+            int matchCount = current->matchIndices.GetSize();
+            for (int i = 0; i < matchCount; ++i) {
+                ++frequencies[current->matchIndices.Get(i)];
             }
         }
         return frequencies;
